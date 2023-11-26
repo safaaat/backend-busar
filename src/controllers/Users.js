@@ -1,114 +1,164 @@
-import Users from "../models/UserModel.js";
+import Users from "../models/UserModel.js"
 import argon2 from "argon2";
-import jwt from "jsonwebtoken";
 
-const cekUsers = async (email) => {
-    const user = await Users.findAll({
-        where: {
-            email: email
-        }
-    });
-    return user;
-};
-
-const usersNoPass = async (email) => {
-    const user = await Users.findAll({
-        attributes: ["id", "name", "email"],
-        where: {
-            email: email
-        }
-    })
-    return user;
-}
-
-export const register = async (req, res) => {
-    const { name, email, password } = req.body;
-    // Hash Password
-    const hashPassword = await argon2.hash(password);
-    // Create Users
+export const getUsers = async (req, res) => {
     try {
-        await Users.create({
-            name: name,
-            email: email,
-            password: hashPassword
-        })
-        res.status(200).json({ msg: "Register success" })
+        const response = await Users.findAll({
+            attributes: ["id", "email", "idAddress", "role"]
+        });
+        res.status(200).json(response)
     } catch (error) {
-        console.error(error);
+        res.status(500).json({ message: error.message })
     }
 }
 
-export const login = async (req, res) => {
-    const user = await cekUsers(req.body.email);
-    const { id, name, email } = user[0];
-    const accessToken = jwt.sign({ id, name, email }, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: "20s"
-    })
-    const refreshToken = jwt.sign({ id, name, email }, process.env.REFRESH_TOKEN_SECRET, {
-        expiresIn: "1d"
-    })
+export const getUsersByEmail = async (req, res) => {
+    try {
+        const response = await Users.findOne({
+            attributes: ["uuid"],
+            where: {
+                email: req.params.email
+            }
+        });
 
-    await Users.update({ refresh_token: refreshToken }, {
-        where: {
-            id: id
-        }
-    });
-    res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000,
-        secure: false
-    });
+        if (!response || response.role === "admin") return res.status(404).json({ message: "Email tidak ditemukan" });
 
-    const userNoPass = await usersNoPass(req.body.email)
-    return res.status(200).json(userNoPass);
+        res.status(200).json(response.uuid)
+    } catch (error) {
+        res.status(500).json({ message: error.message })
+    }
 }
 
-export const logout = async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
+export const createUsers = async (req, res) => {
+    const { email, password, confirmasiPassword, role, idAddress } = req.body
 
-    console.log(refreshToken)
-
-    if (!refreshToken) return res.sendStatus(204);
+    // fetch data from database based on email
     const user = await Users.findOne({
         where: {
-            refresh_token: refreshToken
-        }
-    });
-
-    if (!user) return res.sendStatus(204)
-    await Users.update({ refresh_token: null }, {
-        where: {
-            id: user.id
-        }
-    });
-    res.clearCookie("refreshToken");
-    return res.status(200).json({ msg: "Anda berhasil logout" });
-}
-
-export const refreshToken = async (req, res) => {
-    const refreshToken = req.cookies.refreshToken;
-
-    if (!refreshToken) return req.sendStatus(401);
-
-    const user = await Users.findOne({
-        where: {
-            refresh_token: refreshToken
+            email: email
         }
     })
-    if (!user) return res.sendStatus(403);
+    // if if there are user return 404
+    if (user) return res.status(404).json({ message: "email yang anda gunakan sudah terdaftar" })
+    // if the password and confirmasi password not is the same
+    if (password !== confirmasiPassword) return res.status(401).json({ message: "password dan confirmasi password tidak sama" });
+    const hashPassword = await argon2.hash(password);
 
     try {
-        jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, decode) => {
-            if (err) return res.sendStatus(403);
-            const userId = user.id;
-            const name = user.name;
-            const email = user.email;
-            const accessToken = jwt.sign({ userId, name, email }, process.env.ACCESS_TOKEN_SECRET, {
-                expiresIn: '15s'
-            });
-            res.json({ accessToken })
-        })
+        await Users.create({
+            email: email,
+            password: hashPassword,
+            role: role,
+            idAddress: idAddress
+        });
+        res.status(201).json({ message: "register success" })
     } catch (error) {
-        console.log(error)
+        res.status(400).json({ message: error.message });
+    }
+}
+
+export const updateUsers = async (req, res) => {
+    // Query Users By Params Id
+    const user = await Users.findOne({
+        where: {
+            uuid: req.params.id
+        }
+    });
+    // Destructuring Request Body
+    const { password, confirmasiPassword } = req.body;
+
+
+    // If Users Doesn't Exist
+    if (!user) return res.status(404).json({ message: "user tidak di temukan" });
+    // If Password Cannot Be Empty
+    if (password === "" || confirmasiPassword === "") return res.status(401).json({ message: "password dan confirmasi password tidak boleh kosong" });
+    // if password and confirmasi password are not the same, return status 400
+    if (password !== confirmasiPassword) return res.status(401).json({ message: "password dan confirmasi password tidak sama" });
+    // Matching UserPassword With RequestPasswordBody Using Argon2
+    const match = await argon2.verify(user.password, password);
+    // If Password Is Not Same Return 400
+    if (match) return res.status(400).json({ message: "password tetep sama" });
+
+    // Hashing Password
+    const hashPassword = await argon2.hash(password);
+    // Update Users
+    try {
+        await Users.update({
+            password: hashPassword
+        }, {
+            where: {
+                id: user.id
+            }
+        });
+        res.status(200).json({ message: "update user success" })
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+}
+
+export const updateIdAddress = async (req, res) => {
+    const user = await Users.findOne({
+        where: {
+            uuid: req.params.uuid
+        }
+    })
+    if (!user) return res.status(401).json({ message: "user tidak ditemukan" });
+
+    try {
+        await Users.update({
+            idAddress: req.body.idAddress
+        }, {
+            where: {
+                id: user.id
+            }
+        })
+        res.status(200).json({ message: "update address user success" });
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+}
+
+export const changeEmailUsers = async (req, res) => {
+    const { email } = req.body;
+
+    const user = await Users.findOne({
+        where: {
+            uuid: req.params.uuid
+        }
+    });
+
+    if (!user) return res.status(404).json({ message: "Email tidak ditemukan" });
+
+    try {
+        await Users.update({
+            email: email
+        }, {
+            where: {
+                id: user.id
+            }
+        });
+        res.status(200).json({ message: "update user success" })
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+}
+
+export const deleteUsers = async (req, res) => {
+    const user = await Users.findOne({
+        where: {
+            uuid: req.params.id
+        }
+    });
+    // if the user is not found
+    if (!user) return res.status(404).json({ message: "user tidak di temukan" });
+    try {
+        await Users.destroy({
+            where: {
+                id: user.id
+            }
+        });
+        res.status(200).json({ message: "delete user success" })
+    } catch (error) {
+        res.status(400).json({ message: error.message });
     }
 }

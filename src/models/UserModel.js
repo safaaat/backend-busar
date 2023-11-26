@@ -3,16 +3,13 @@ import db from "../config/Database.js";
 
 const { DataTypes } = Sequelize;
 
-export const Users = db.define("users", {
-    refresh_token: {
-        type: DataTypes.TEXT
-    },
-    name: {
+const Users = db.define("users", {
+    uuid: {
         type: DataTypes.STRING,
+        defaultValue: DataTypes.UUIDV4,
         allowNull: false,
         validate: {
-            notEmpty: true,
-            len: [3, 100]
+            notEmpty: true
         }
     },
     email: {
@@ -24,6 +21,20 @@ export const Users = db.define("users", {
         }
     },
     password: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
+    },
+    idAddress: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        validate: {
+            notEmpty: false
+        }
+    },
+    role: {
         type: DataTypes.STRING,
         allowNull: false,
         validate: {
