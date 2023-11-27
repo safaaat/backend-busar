@@ -3,8 +3,7 @@ import dotenv from "dotenv";
 import db from "./src/config/Database.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import UsersRouter from "./src/router/UsersRouter.js";
-import AuthRoute from "./src/router/UsersRouter.js"
+import { UsersRouter, AuthRouter, CategoryRouter, AddressRouter, ProductRouter } from "./src/router/index.js";
 dotenv.config();
 
 const port = process.env.PORT || 5000
@@ -36,10 +35,14 @@ app.use(cors({
 
 app.use(cookieParser());
 app.use(express.json());
+app.use(express.static("src/public"))
 
 // Router
 app.use(UsersRouter);
-app.use(AuthRoute);
+app.use(AuthRouter);
+app.use(CategoryRouter);
+app.use(AddressRouter);
+app.use(ProductRouter);
 
 app.listen(port, () => console.log(`Server Running ${port}`));
 

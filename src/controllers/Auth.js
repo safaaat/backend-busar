@@ -35,8 +35,6 @@ export const Login = async (req, res) => {
     // If Password Is Not Same Return 400
     if (!match) return res.status(400).json({ message: "password yang anda masukan salah" });
 
-    req.session.userId = user.uuid;
-
     const userNoPass = await Users.findOne({
         attributes: ["uuid", "email", "role", "idAddress"],
         where: {
