@@ -12,7 +12,7 @@ const TYPE_IMAGE = {
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, "public/images/product");
+        cb(null, "src/public/images/product");
     },
     filename: (req, file, cb) => {
         const uuid = crypto.randomUUID();
