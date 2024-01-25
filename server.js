@@ -3,12 +3,11 @@ import dotenv from "dotenv";
 import db from "./src/config/Database.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { UsersRouter, AuthRouter, CategoryRouter, AddressRouter, ProductRouter, WishlistRouter } from "./src/router/index.js";
+import { UsersRouter, AuthRouter, CategoryRouter, AddressRouter, ProductRouter, WishlistRouter, CartRouter, LabelAddressRouter } from "./src/router/index.js";
 dotenv.config();
 
 const port = process.env.PORT || 5000
 const app = express();
-
 
 try {
     await db.sync()
@@ -40,6 +39,7 @@ app.use(CategoryRouter);
 app.use(AddressRouter);
 app.use(ProductRouter);
 app.use(WishlistRouter);
+app.use(CartRouter);
+app.use(LabelAddressRouter);
 
 app.listen(port, () => console.log(`Server Running ${port}`));
-

@@ -25,8 +25,9 @@ export const getProductsById = async (req, res) => {
 export const uploadProduct = async (req, res) => {
     try {
         const { name, amount, price, category, information } = req.body;
-        const imagesJSON = JSON.stringify(req.images);
-        const urlJSON = JSON.stringify(req.url);
+
+        const imagesJSON = JSON.stringify(req.newImages);
+        const urlJSON = JSON.stringify(req.newUrl);
 
         await Products.create({
             name: name.toLowerCase(),
@@ -42,19 +43,12 @@ export const uploadProduct = async (req, res) => {
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
-
-
 }
 
 export const updateProducts = async (req, res) => {
     const { name, amount, price, category, information } = req.body;
     const imagesJSON = JSON.stringify(req.newArrayImage)
     const urlJSON = JSON.stringify(req.newArrayUrl)
-
-    console.log({
-        imagesJSON,
-        urlJSON
-    })
 
     try {
         await Products.update({

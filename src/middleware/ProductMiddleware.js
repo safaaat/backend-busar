@@ -3,22 +3,13 @@ import path from "path";
 import crypto from "crypto";
 import Products from "../models/ProductModel.js";
 import * as fs from 'node:fs/promises';
+import sharp from "sharp";
 
 const TYPE_IMAGE = {
     "image/jpg": "jpg",
     "image/jpeg": "jpeg",
     "image/png": "png",
 }
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, "src/public/images/product");
-    },
-    filename: (req, file, cb) => {
-        const uuid = crypto.randomUUID();
-        cb(null, new Date().getTime() + uuid + path.extname(file.originalname))
-    }
-})
 
 const fileFilter = (req, file, cb) => {
     const acceptMime = Object.keys(TYPE_IMAGE);
@@ -32,70 +23,20 @@ const fileFilter = (req, file, cb) => {
     }
 }
 
-// Middleware untuk memeriksa apakah ada file yang diunggah
-const checkUploadText = async (req, res, next) => {
-    const { name, amount, price, category, information } = req.body;
-    // Pastikan 'image1' atau 'image2' ada dalam request files
-    if (name === "") return res.status(400).json({ message: "name tidak boleh kosong." });
-    if (amount === "") return res.status(400).json({ message: "amount tidak boleh kosong." });
-    if (price === "") return res.status(400).json({ message: "price tidak boleh kosong." });
-    if (category === "") return res.status(400).json({ message: "category tidak boleh kosong." });
-    if (information === "") return res.status(400).json({ message: "information tidak boleh kosong." });
-    next();
-}
+const maxSize = 1 * 1024 * 1024; //1MB
 
-const checkUploadFile = async (req, res, next) => {
-    if (!req.files || (!req.files["image1"] && !req.files["image2"] && !req.files["image3"] && !req.files["image4"] && !req.files["image5"])) return res.status(400).json({ message: "harap unggah file gambar." });
-    next();
-}
+const uploadFile = multer({
+    fileFilter,
+    limits: { fileSize: maxSize }
+}).fields([
+    { name: "image1", maxCount: 1 },
+    { name: "image2", maxCount: 1 },
+    { name: "image3", maxCount: 1 },
+    { name: "image4", maxCount: 1 },
+    { name: "image5", maxCount: 1 },
+]);
 
-const handleCombineImage = (req, res, next) => {
-    const { image1, image2, image3, image4, image5 } = req.files;
-
-    let urlProduct
-    let imageProduct
-    if (image1) {
-        let url = { image1: `images/product/${image1[0].filename}` }
-        let image = { image1: image1[0].filename }
-
-        urlProduct = { ...urlProduct, ...url }
-        imageProduct = { ...imageProduct, ...image }
-    }
-    if (image2) {
-        let url = { image2: `images/product/${image2[0].filename}` }
-        let image = { image2: image2[0].filename }
-
-        urlProduct = { ...urlProduct, ...url }
-        imageProduct = { ...imageProduct, ...image }
-    }
-    if (image3) {
-        let url = { image3: `images/product/${image3[0].filename}` }
-        let image = { image3: image3[0].filename }
-
-        urlProduct = { ...urlProduct, ...url }
-        imageProduct = { ...imageProduct, ...image }
-    }
-    if (image4) {
-        let url = { image4: `images/product/${image4[0].filename}` }
-        let image = { image4: image4[0].filename }
-
-        urlProduct = { ...urlProduct, ...url }
-        imageProduct = { ...imageProduct, ...image }
-    }
-    if (image5) {
-        let url = { image5: `images/product/${image5[0].filename}` }
-        let image = { image5: image5[0].filename }
-
-        urlProduct = { ...urlProduct, ...url }
-        imageProduct = { ...imageProduct, ...image }
-    }
-
-    req.url = urlProduct;
-    req.images = imageProduct;
-    next()
-}
-
-// // Middleware khusus untuk menangani batasan ukuran file
+// Middleware khusus untuk menangani batasan ukuran file
 const handleFileUploadSizeLimit = (err, req, res, next) => {
     // err instanceof multer.MulterError = untuk check apakah multer memiliki error
     if (err instanceof multer.MulterError) {
@@ -111,15 +52,62 @@ const handleFileUploadSizeLimit = (err, req, res, next) => {
     }
 };
 
-const maxSize = 1 * 1024 * 1024; //1MB
+// Middleware untuk memeriksa apakah ada file yang diunggah
+const checkUploadText = async (req, res, next) => {
+    const { name, amount, price, category, information } = req.body;
+    // Pastikan 'image1' atau 'image2' ada dalam request files
+    if (name === "" || !name) return res.status(400).json({ message: "name tidak boleh kosong." });
+    if (amount === "" || !amount) return res.status(400).json({ message: "amount tidak boleh kosong." });
+    if (price === "" || !price) return res.status(400).json({ message: "price tidak boleh kosong." });
+    if (category === "" || !category) return res.status(400).json({ message: "category tidak boleh kosong." });
+    if (information === "" || !information) return res.status(400).json({ message: "information tidak boleh kosong." });
+    next();
+}
 
-const uploadFile = multer({ storage, fileFilter, limits: { fileSize: maxSize } }).fields([
-    { name: "image1", maxCount: 1 },
-    { name: "image2", maxCount: 1 },
-    { name: "image3", maxCount: 1 },
-    { name: "image4", maxCount: 1 },
-    { name: "image5", maxCount: 1 },
-]);
+const checkUploadFile = async (req, res, next) => {
+    if (!req.files || (!req.files["image1"] && !req.files["image2"] && !req.files["image3"] && !req.files["image4"] && !req.files["image5"])) return res.status(400).json({ message: "harap unggah file gambar." });
+    next();
+}
+
+// Fungsi middleware untuk mengubah format gambar menjadi WebP setelah diunggah
+const processImages = async (req, res, next) => {
+    try {
+        // Lakukan pengolahan gambar untuk setiap field
+        const imageFields = ["image1", "image2", "image3", "image4", "image5"];
+        let imageWebp;
+        let urlWebp;
+
+        for (const field of imageFields) {
+            if (req.files[field]) {
+                // Ambil path file yang diunggah
+                const imagePath = req.files[field][0].buffer;
+                // Random uuid
+                const uuid = crypto.randomUUID();
+                const fileName = `${new Date().getTime() + uuid}.webp`
+
+                // Lakukan proses dengan sharp untuk mengonversi ke format WebP
+                await sharp(imagePath)
+                    .webp() // Konversi ke format WebP
+                    .toFile(path.join("src/public/images/product", fileName));
+
+                const newImage = { [field]: fileName }
+                const newUrl = { [field]: `images/product/${fileName}` }
+
+                imageWebp = { ...imageWebp, ...newImage };
+                urlWebp = { ...urlWebp, ...newUrl };
+            }
+        }
+
+        req.newImages = imageWebp;
+        req.newUrl = urlWebp;
+        // Lanjutkan ke middleware berikutnya atau route handler
+        next();
+    } catch (error) {
+        // Tangani kesalahan jika ada
+        console.error("Error processing images:", error);
+        return res.status(500).send("Internal Server Error");
+    }
+}
 
 const getImageNamesFromId = async (req, res, next) => {
     let arrayImage = [];
@@ -135,14 +123,17 @@ const getImageNamesFromId = async (req, res, next) => {
     };
 
     req.arrayRemoveImage = arrayImage;
+
     next()
 }
 
 const loopRemoveImage = async (req, res, next) => {
     for (const element of req.arrayRemoveImage) {
-        await fs.unlink(`./public/images/product/${element}`);
+        await fs.unlink(`./src/public/images/product/${element}`);
     }
 
+    req.newArrayImage = req.newArrayImage;
+    req.newArrayUrl = req.newArrayUrl;
     next();
 }
 
@@ -154,175 +145,49 @@ const checkUploadFileUpdate = async (req, res, next) => {
 }
 
 const handleDataArrayUpdate = async (req, res, next) => {
-    const { image1, image2, image3, image4, image5 } = req.files;
+    const images = req.newImages;
+    const urls = req.newUrl;
 
     const product = await Products.findOne({
         where: {
             id: req.params.id
         }
     })
-    const convertObjUrl = JSON.parse(product.url);
+
     const convertObjImage = JSON.parse(product.image);
 
     let arrayRemoveImage = [];
-    let newArrayImage = {}
-    let newArrayUrl = {}
+    let newArrayImage = { ...images }
+    let newArrayUrl = { ...urls }
 
-    // Check if 'product image1' exists
-    if (convertObjImage.image1) {
-        // Check if 'users image1' not same 'product image1'
-        if (req.body.image1 !== convertObjUrl.image1) {
-            // if not same, push data 'product image1' to arrayRomoveImage
-            arrayRemoveImage.push(convertObjImage.image1);
-            // check if users input file image1
-            if (image1) {
-                // if yes, enter the image1 file input data into the object newArrayImage and newArrayUrl
-                let url = { image1: `images/product/${image1[0].filename}` }
-                let image = { image1: image1[0].filename }
+    // Lakukan pengolahan gambar untuk setiap field
+    const imageFields = ["image1", "image2", "image3", "image4", "image5"];
 
-                newArrayImage = { ...newArrayImage, ...image }
-                newArrayUrl = { ...newArrayUrl, ...url }
+    for (const image of imageFields) {
+        // check if users upload image
+        if (req.files[image]) {
+            // check if the database has an image. remove image database
+            if (convertObjImage[image]) {
+                arrayRemoveImage.push(convertObjImage[image]);
+            }
+        } else { // if the users does not upload image
+            if (req.body[image]) {
+                const images = { [image]: convertObjImage[image] };
+                const urls = { [image]: `images/product/${convertObjImage[image]}` };
+
+                newArrayImage = { ...newArrayImage, ...images };
+                newArrayUrl = { ...newArrayUrl, ...urls };
+            } else {
+                if (convertObjImage[image]) arrayRemoveImage.push(convertObjImage[image]);
             }
         }
-        // if 'users image1' is the same as 'product image1'
-        else {
-            // enter the 'product image1' into newArrayImage and newArrayUrl objects
-            newArrayUrl = { ...newArrayUrl, image1: convertObjUrl.image1 }
-            newArrayImage = { ...newArrayImage, image1: convertObjImage.image1 }
-        }
-    } else if (image1 && !convertObjImage.image1) {
-        let url = { image1: `images/product/${image1[0].filename}` }
-        let image = { image1: image1[0].filename }
-
-        newArrayImage = { ...newArrayImage, ...image }
-        newArrayUrl = { ...newArrayUrl, ...url }
     }
-
-    // Check if 'product image2' exists
-    if (convertObjImage.image2) {
-        // Check if 'users image2' not same 'product image1'
-        if (req.body.image2 !== convertObjUrl.image2) {
-            // if not same, push data 'product image2' to arrayRomoveImage
-            arrayRemoveImage.push(convertObjImage.image2);
-            // check if users input file image1
-            if (image2) {
-                // if yes, enter the image1 file input data into the object newArrayImage and newArrayUrl
-                let url = { image2: `images/product/${image2[0].filename}` }
-                let image = { image2: image2[0].filename }
-
-                newArrayImage = { ...newArrayImage, ...image }
-                newArrayUrl = { ...newArrayUrl, ...url }
-            }
-        }
-        // if 'users image2' is the same as 'product image2'
-        else {
-            // enter the 'product image2' into newArrayImage and newArrayUrl objects
-            newArrayUrl = { ...newArrayUrl, image2: convertObjUrl.image2 }
-            newArrayImage = { ...newArrayImage, image2: convertObjImage.image2 }
-        }
-    } else if (image2 && !convertObjImage.image2) {
-        let url = { image2: `images/product/${image2[0].filename}` }
-        let image = { image2: image2[0].filename }
-
-        newArrayImage = { ...newArrayImage, ...image }
-        newArrayUrl = { ...newArrayUrl, ...url }
-    }
-
-    // Check if 'product image3' exists
-    if (convertObjImage.image3) {
-        // Check if 'users image3' not same 'product image3'
-        if (req.body.image3 !== convertObjUrl.image3) {
-            // if not same, push data 'product image3' to arrayRomoveImage
-            arrayRemoveImage.push(convertObjImage.image3);
-            // check if users input file image3
-            if (image3) {
-                // if yes, enter the image3 file input data into the object newArrayImage and newArrayUrl
-                let url = { image3: `images/product/${image3[0].filename}` }
-                let image = { image3: image3[0].filename }
-
-                newArrayImage = { ...newArrayImage, ...image }
-                newArrayUrl = { ...newArrayUrl, ...url }
-            }
-        }
-        // if 'users image3' is the same as 'product image3'
-        else {
-            // enter the 'product image3' into newArrayImage and newArrayUrl objects
-            newArrayUrl = { ...newArrayUrl, image3: convertObjUrl.image3 }
-            newArrayImage = { ...newArrayImage, image3: convertObjImage.image3 }
-        }
-    } else if (image3 && !convertObjImage.image3) {
-        let url = { image3: `images/product/${image3[0].filename}` }
-        let image = { image3: image3[0].filename }
-
-        newArrayImage = { ...newArrayImage, ...image }
-        newArrayUrl = { ...newArrayUrl, ...url }
-    }
-
-    // Check if 'product image4' exists
-    if (convertObjImage.image4) {
-        // Check if 'users image4' not same 'product image4'
-        if (req.body.image4 !== convertObjUrl.image4) {
-            // if not same, push data 'product image4' to arrayRomoveImage
-            arrayRemoveImage.push(convertObjImage.image4);
-            // check if users input file image4
-            if (image4) {
-                // if yes, enter the image4 file input data into the object newArrayImage and newArrayUrl
-                let url = { image4: `images/product/${image4[0].filename}` }
-                let image = { image4: image4[0].filename }
-
-                newArrayImage = { ...newArrayImage, ...image }
-                newArrayUrl = { ...newArrayUrl, ...url }
-            }
-        }
-        // if 'users image4' is the same as 'product image4'
-        else {
-            // enter the 'product image4' into newArrayImage and newArrayUrl objects
-            newArrayUrl = { ...newArrayUrl, image4: convertObjUrl.image4 }
-            newArrayImage = { ...newArrayImage, image4: convertObjImage.image4 }
-        }
-    } else if (image4 && !convertObjImage.image4) {
-        let url = { image4: `images/product/${image4[0].filename}` }
-        let image = { image4: image4[0].filename }
-
-        newArrayImage = { ...newArrayImage, ...image }
-        newArrayUrl = { ...newArrayUrl, ...url }
-    }
-
-    // Check if 'product image5' exists
-    if (convertObjImage.image5) {
-        // Check if 'users image5' not same 'product image5'
-        if (req.body.image5 !== convertObjUrl.image5) {
-            // if not same, push data 'product image5' to arrayRomoveImage
-            arrayRemoveImage.push(convertObjImage.image5);
-            // check if users input file image5
-            if (image5) {
-                // if yes, enter the image5 file input data into the object newArrayImage and newArrayUrl
-                let url = { image5: `images/product/${image5[0].filename}` }
-                let image = { image5: image5[0].filename }
-
-                newArrayImage = { ...newArrayImage, ...image }
-                newArrayUrl = { ...newArrayUrl, ...url }
-            }
-        }
-        // if 'users image5' is the same as 'product image5'
-        else {
-            // enter the 'product image5' into newArrayImage and newArrayUrl objects
-            newArrayUrl = { ...newArrayUrl, image5: convertObjUrl.image5 }
-            newArrayImage = { ...newArrayImage, image5: convertObjImage.image5 }
-        }
-    } else if (image5 && !convertObjImage.image5) {
-        let url = { image5: `images/product/${image5[0].filename}` }
-        let image = { image5: image5[0].filename }
-
-        newArrayImage = { ...newArrayImage, ...image }
-        newArrayUrl = { ...newArrayUrl, ...url }
-    }
-
 
     req.arrayRemoveImage = arrayRemoveImage;
     req.newArrayImage = newArrayImage;
     req.newArrayUrl = newArrayUrl;
+
     next()
 }
 
-export { uploadFile, checkUploadText, checkUploadFile, handleCombineImage, handleFileUploadSizeLimit, getImageNamesFromId, loopRemoveImage, checkUploadFileUpdate, handleDataArrayUpdate };
+export { uploadFile, checkUploadText, checkUploadFile, handleFileUploadSizeLimit, getImageNamesFromId, loopRemoveImage, checkUploadFileUpdate, handleDataArrayUpdate, processImages };

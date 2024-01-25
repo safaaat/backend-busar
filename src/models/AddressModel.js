@@ -19,7 +19,7 @@ const Address = db.define("address", {
         }
     },
     numberPhone: {
-        type: DataTypes.INTEGER,
+        type: DataTypes.BIGINT,
         allowNull: false,
         validate: {
             notEmpty: true
@@ -55,6 +55,27 @@ const Address = db.define("address", {
     },
     courierNote: {
         type: DataTypes.STRING,
+        allowNull: true,
+        validate: {
+            notEmpty: false
+        }
+    },
+    addressLabel: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
+    },
+    main: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        validate: {
+            notEmpty: false
+        }
+    },
+    choice: {
+        type: DataTypes.BOOLEAN,
         allowNull: true,
         validate: {
             notEmpty: false
