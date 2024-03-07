@@ -5,6 +5,7 @@ import AddressRouter from "../router/AddressRouter.js";
 import ProductRouter from "../router/ProductRouter.js";
 import WishlistRouter from "../router/WishlistRouter.js";
 import CartRouter from "../router/CartRouter.js";
-import LabelAddressRouter from "../router/LabelAddressRouter.js"
+import LabelAddressRouter from "../router/LabelAddressRouter.js";
+import PaymentRouter from "../router/PaymentRouter.js";
 
-export { UsersRouter, AuthRouter, CategoryRouter, AddressRouter, ProductRouter, WishlistRouter, CartRouter, LabelAddressRouter }
+export { UsersRouter, AuthRouter, CategoryRouter, AddressRouter, ProductRouter, WishlistRouter, CartRouter, LabelAddressRouter, PaymentRouter }
