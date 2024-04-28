@@ -13,10 +13,7 @@ const Payments = db.define("payment", {
     },
     status: {
         type: DataTypes.STRING,
-        allowNull: false,
-        validate: {
-            notEmpty: true
-        }
+        allowNull: true
     },
     total_price: {
         type: DataTypes.INTEGER,
@@ -62,29 +59,23 @@ const Payments = db.define("payment", {
     },
     date: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        validate: {
-            notEmpty: true
-        }
+        allowNull: true
     },
     data_payment: {
         type: DataTypes.STRING,
-        allowNull: true,
+        allowNull: true
     },
     expiration_time: {
         type: DataTypes.BIGINT,
-        allowNull: false,
-        validate: {
-            notEmpty: true
-        }
+        allowNull: true
     },
     settlement_time: {
         type: DataTypes.STRING,
-        allowNull: true,
+        allowNull: true
     },
     status_purchase: {
         type: DataTypes.STRING,
-        allowNull: true,
+        allowNull: true
     },
 }, {
     freezeTableName: true

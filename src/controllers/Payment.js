@@ -2,272 +2,12 @@ import midtransClient from "midtrans-client";
 import { nanoid } from 'nanoid';
 import Payments from "../models/PaymentModel.js";
 import crypto from "crypto";
-import { handleBroadcastClient } from "../sockets/ConfigureSocket.js";
-import Products from "../models/ProductModel.js";
-import { handleUpdatePayment } from "../servis.js/PaymentServis.js";
+import { handleBroadcastClient, handleSendMessage } from "../sockets/ConfigureSocket.js";
+import { createDatabasePayment, handleFindAllPayment, handleFindOnePayment, handleGetStatusMidtrans, handleRemoveCart, handleUpdatePayment, reduceProductStock, removePayment, updatePaymentPending, updateStatusPayment } from "../servis.js/PaymentServis.js";
 
-export const handleFindOnePayment = async (transaction_id) => {
-    try {
-        const payment = await Payments.findOne({
-            where: {
-                transaction_id: transaction_id
-            }
-        });
-
-        // Parsing customer_details and payment from string to object
-        payment.customer_details = JSON.parse(payment.customer_details);
-        payment.item_details = JSON.parse(payment.item_details);
-        if (payment.data_payment) {
-            payment.data_payment = JSON.parse(payment.data_payment);
-        }
-
-        let data = { ...payment.dataValues, item_details: JSON.parse(payment.item_details) }
-
-        return data
-    } catch (error) {
-        return null
-    }
-}
-
-const reduceProductStock = async (data) => {
-    try {
-        const payment = await handleFindOnePayment(data.order_id);
-        const productPayment = payment.item_details;
-
-        for (let index = 0; index < productPayment.length; index++) {
-            const productId = productPayment[index].idProduct;
-            const productAmount = productPayment[index].quantity;
-
-            const product = await Products.findOne({
-                where: {
-                    id: productId
-                }
-            })
-
-            await Products.update({
-                amount: product.amount - productAmount
-            }, {
-                where: {
-                    id: productId
-                }
-            })
-        }
-    } catch (error) {
-        console.error("Error reduce product stock:", error);
-    }
-}
-
-export const handleGetStatusMidtrans = async (transaction_id) => {
-    let apiClient = new midtransClient.Snap({
-        isProduction: false,
-        serverKey: process.env.SERVER_KEY,
-        clientKey: process.env.CLIENT_KEY
-    });
-
-    try {
-        const response = await apiClient.transaction.status(transaction_id);
-
-        // Cstore
-        if (response.payment_type === "cstore") {
-            // Handle Store Indomaret
-            if (response.store === "indomaret") {
-                const data_payment = {
-                    payment_type: response.payment_type,
-                    payment_va_numbers: {
-                        payment_store: response.store,
-                        merchant_id: response.merchant_id,
-                        payment_code: response.payment_code,
-                    }
-                }
-
-                return data_payment
-            }
-
-            // Handle Store Alfamart
-            const data_payment = {
-                payment_type: response.payment_type,
-                payment_va_numbers: {
-                    payment_store: response.store,
-                    payment_code: response.payment_code,
-                }
-            }
-
-            return data_payment
-        }
-        // Qris
-        if (response.payment_type === "qris") {
-            const data_payment = {
-                payment_store: response.acquirer
-            }
-
-            return data_payment
-        }
-        // Bank Mandiri
-        if (response.payment_type === "echannel") {
-            const data_payment = {
-                payment_type: response.payment_type,
-                payment_va_numbers: {
-                    bank: "mandiri",
-                    biller_code: response.biller_code,
-                    bill_key: response.bill_key,
-                }
-            }
-
-            return data_payment
-        }
-        // Bank Transfer
-        if (response.payment_type === "bank_transfer") {
-            // Handle Permata Bank
-            if (response.permata_va_number) {
-                const data_payment = {
-                    payment_type: response.payment_type,
-                    payment_va_numbers: {
-                        bank: "permata",
-                        va_number: response.permata_va_number
-                    }
-                }
-
-                return data_payment
-            }
-
-            const data_payment = {
-                payment_type: response.payment_type,
-                payment_va_numbers: response.va_numbers[0],
-            }
-
-            return data_payment
-        }
-
-        return response;
-    } catch (error) {
-        return null
-    }
-}
-
-const createDatabasePayment = async (transaction_id, total_price, uuid_users, customer_details, item_details, snap_token, snap_redirect_url, expiration_time) => {
-    let time = new Date().getTime();
-
-    await Payments.create({
-        transaction_id: transaction_id,
-        status: process.env.PAYMENT_PEDDING,
-        total_price: total_price,
-        uuid_users: uuid_users,
-        customer_details: JSON.stringify(customer_details),
-        item_details: JSON.stringify(item_details),
-        snap_token: snap_token,
-        snap_redirect_url: snap_redirect_url,
-        date: time,
-        expiration_time: expiration_time
-    })
-}
-
-const updateStatusPayment = async (transaction_id, settlement_time) => {
-    try {
-        await Payments.update({
-            status: process.env.PAYMENT_SUCCESS,
-            settlement_time: settlement_time,
-            status_purchase: process.env.PURCHASE_PACKAGED
-        }, {
-            where: {
-                transaction_id: transaction_id
-            }
-        });
-
-        const payment = await handleFindOnePayment(transaction_id);
-        return payment
-    } catch (error) {
-        return null
-    }
-}
-
-// Payment Expiration Time
-export const checkAndUpdateExpiredPayments = async () => {
-    const currentTime = new Date().getTime();
-
-    // Ambil semua pembayaran dengan status PENDING_PAYMENT dari database
-    const pendingPayments = await Payments.findAll({
-        where: {
-            status: process.env.PAYMENT_PEDDING
-        }
-    });
-
-    // Periksa setiap pembayaran untuk melihat apakah waktu kedaluwarsa
-    pendingPayments.forEach(async (payment) => {
-        if (currentTime > payment.expiration_time) {
-            // Jika waktu kedaluwarsa, update status menjadi "canceled"
-            await Payments.update({
-                status: process.env.PAYMENT_CANCEL
-            }, {
-                where: {
-                    transaction_id: payment.transaction_id
-                }
-            });
-        }
-    });
-
-    console.log("run check expiration_time")
-}
-
-//  Update The Purchase Status To Delivered
-export const updatePurchaseStatusDelivered = async () => {
-    const payment = await Payments.findAll({
-        where: {
-            status_purchase: process.env.PURCHASE_PACKAGED
-        }
-    });
-
-    payment.forEach(async (payments, index) => {
-        const settlementTime = new Date(`${payments.settlement_time}`);
-        const packagedTime = settlementTime.getTime() + 15 * 60 * 1000;
-        // Current Time
-        const currentMillis = new Date().getTime();
-
-        if (currentMillis >= packagedTime) {
-            // Jika packagedTime, update purchase menjadi "DELIVERED"
-            await Payments.update({
-                status_purchase: process.env.PURCHASE_DELIVERED
-            }, {
-                where: {
-                    transaction_id: payments.transaction_id
-                }
-            });
-        }
-    })
-
-    console.log("run check updatePurchaseStatusDelivered")
-}
-
-//  Update The Purchase Status To Accepted
-export const updatePurchaseStatusAccepted = async () => {
-    const paymentDelivered = await Payments.findAll({
-        where: {
-            status_purchase: process.env.PURCHASE_DELIVERED
-        }
-    });
-
-    paymentDelivered.forEach(async (payments) => {
-        const settlementTime = new Date(`${payments.settlement_time}`);
-        const packagedTime = settlementTime.getTime() + 3 * 24 * 60 * 60 * 1000;
-        // Current Time
-        const currentMillis = new Date().getTime();
-
-        if (currentMillis >= packagedTime) {
-            const fields = {
-                status_purchase: process.env.PURCHASE_ACCEPTED
-            }
-
-            // if 3 day, update purchase menjadi "Accepted"
-            await handleUpdatePayment(fields, payments.transaction_id);
-        }
-    })
-
-    console.log("run check updatePurchaseStatusDelivered")
-}
-
-export const createTransaction = async (req, res) => {
+export const createSnapMidtrans = async (req, res) => {
     const { total_price, name_customer, email_customer, uuid_users, product } = req.body;
     const transaction_id = `TRX-${nanoid(4)}-${nanoid(8)}`;
-    const expiration_time = new Date().getTime() + 24 * 60 * 60 * 1000;
 
     const snap = new midtransClient.Snap({
         isProduction: false,
@@ -281,6 +21,7 @@ export const createTransaction = async (req, res) => {
             gross_amount: total_price
         },
         item_details: product.map((data) => ({
+            idCarts: data.id,
             idProduct: data.idProduct,
             price: data.price,
             quantity: data.amount,
@@ -292,7 +33,7 @@ export const createTransaction = async (req, res) => {
         },
         callbacks: {
             finish: `${process.env.FRONT_END_URL}/order-status/busar/${transaction_id}`,
-            error: `${process.env.FRONT_END_URL}/order-status/busar/${transaction_id}`,
+            error: `${process.env.FRONT_END_URL}/cart/shipment`,
             pending: `${process.env.FRONT_END_URL}/order-status/busar/${transaction_id}`
         }
     }
@@ -304,19 +45,40 @@ export const createTransaction = async (req, res) => {
     try {
         const response = await snap.createTransaction(parameter, creditCardOption);
 
-        createDatabasePayment(transaction_id, total_price, uuid_users, parameter.customer_details, parameter.item_details, response.token, response.redirect_url, expiration_time);
+        const field = {
+            transaction_id: transaction_id,
+            total_price: total_price,
+            uuid_users: uuid_users,
+            customer_details: JSON.stringify(parameter.customer_details),
+            item_details: JSON.stringify(parameter.item_details),
+            snap_token: response.token,
+            snap_redirect_url: response.redirect_url,
+            date: new Date().getTime()
+        }
+        // Call Function create database payment
+        const createPayment = await createDatabasePayment(field);
 
-        return res.status(200).json({ snap_token: response.token, id: transaction_id, message: "create payment success" })
+        if (!createPayment) return res.status(401).json({ message: "create snap midtrans failed" });
+        return res.status(200).json({ snap_token: response.token, transaction_id: transaction_id, message: "create snap midtrans success" });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 }
 
+// Handle Remove Payment
+export const handleRemovePayment = async (req, res) => {
+    const { transaction_id } = req.body;
+
+    console.log(transaction_id)
+
+    const payment = await removePayment(transaction_id);
+
+    if (!payment) return res.status(401).json({ message: "remove payment failed" });
+    return res.status(200).json({ message: "remove payment success" });
+}
+
 export const getTransactionByTransactionId = async (req, res) => {
     const { uuid, transaction_id } = req.params;
-
-    // const response = await handleGetStatusMidtrans(transaction_id);
-    // return res.status(200).json(response);
 
     const payment = await handleFindOnePayment(transaction_id);
 
@@ -328,6 +90,7 @@ export const getTransactionByTransactionId = async (req, res) => {
 
     if (!payment.data_payment) {
         const response = await handleGetStatusMidtrans(transaction_id);
+
         if (!response) return res.status(500).json({ message: "Failed to fetch transaction status" });
 
         await Payments.update({
@@ -339,10 +102,34 @@ export const getTransactionByTransactionId = async (req, res) => {
         });
 
         const newPayment = await handleFindOnePayment(transaction_id);
+
+        if (newPayment) handleSendMessage(`${newPayment.uuid_users}-socket-payment`, "get-payment")
+
         return res.status(200).json(newPayment);
     }
 
     return res.status(200).json(payment);
+}
+
+// Get All Transaction By Uuid
+export const getTransactionAllByUuid = async (req, res) => {
+    const { uuid } = req.params;
+
+    const response = await handleFindAllPayment(uuid);
+
+    const filterPayment = response.filter((data) => {
+        return data.status !== null
+    });
+
+    return res.status(200).json(filterPayment);
+}
+
+// Handler untuk notifikasi dari Midtrans
+export const transactionNotif = async (req, res) => {
+    const data = req.body;
+    // console.log(data)
+    const payment = await updateStatusTransaction(data.order_id, data);
+    return res.status(200).json(payment)
 }
 
 const updateStatusTransaction = async (transaction_id, data) => {
@@ -359,25 +146,41 @@ const updateStatusTransaction = async (transaction_id, data) => {
             const transaction = await updateStatusPayment(transaction_id, settlement_time);
             console.log("transaction success");
             await reduceProductStock(data);
-            if (transaction) handleBroadcastClient(transaction.transaction_id, transaction)
+            if (transaction) {
+                // Handle Transaction Success
+                handleBroadcastClient(transaction.transaction_id, transaction);
+
+                const allPayment = await handleFindAllPayment(transaction.uuid_users);
+                // Handle Socket payment all
+                handleBroadcastClient(`${transaction.uuid_users}-socket-payment`, allPayment);
+            }
             reponseData = transaction
         }
     } else if (transactionStatus == 'settlement') {
         const transaction = await updateStatusPayment(transaction_id, settlement_time);
-        console.log("transaction success");
+        console.log(`transaction: ${data.order_id} status success`);
         await reduceProductStock(data);
-        if (transaction) handleBroadcastClient(transaction.transaction_id, transaction)
+        if (transaction) {
+            // Handle Socket Transaction Success
+            handleBroadcastClient(transaction.transaction_id, transaction);
+
+            const allPayment = await handleFindAllPayment(transaction.uuid_users);
+            // Handle Socket payment all
+            handleBroadcastClient(`${transaction.uuid_users}-socket-payment`, allPayment);
+        }
         reponseData = transaction
     }
-    // else if (transactionStatus == 'cancel' ||
-    //     transactionStatus == 'deny' ||
-    //     transactionStatus == 'expire') {
-    //     const transaction = await updateStatusPayment(transaction_id, process.env.PAYMENT_CANCEL);
-    //     reponseData = transaction
-    // } else if (transactionStatus == 'pending') {
-    //     const transaction = await updateStatusPayment(transaction_id, process.env.PAYMENT_PEDDING);
-    //     reponseData = transaction
-    // }
+    else if (transactionStatus == 'cancel' ||
+        transactionStatus == 'deny' ||
+        transactionStatus == 'expire') {
+        console.log(`transaction: ${data.order_id} status cansel`)
+    } else if (transactionStatus == 'pending') {
+        // Update Payment pending
+        await updatePaymentPending(data.order_id);
+        // Remove product from cart. if users purchased.
+        await handleRemoveCart(data.order_id);
+        console.log(`transaction: ${data.order_id} status pending`)
+    }
 
     return {
         status: "success",
@@ -385,16 +188,16 @@ const updateStatusTransaction = async (transaction_id, data) => {
     }
 }
 
-// Handler untuk notifikasi dari Midtrans
-export const transactionNotif = async (req, res) => {
-    const data = req.body;
-    const payment = await updateStatusTransaction(data.order_id, data);
-    return res.status(200).json(payment)
-}
-
-// Handle Update the purchase status to delivered
-export const updatePurchaseToDelivered = async (req, res) => {
+// Handle Update the purchase status Packed to delivered
+export const updatePackedStatusToDelivered = async (req, res) => {
     const { transaction_id } = req.body;
+
+    const getPayment = await handleFindOnePayment(transaction_id);
+
+    // Check Status payment, if the payment status is not PAYMENT_SUCCESS
+    if (getPayment.status !== `${process.env.PAYMENT_SUCCESS}`) return res.status(400).json({ message: `payment does not have ${process.env.PAYMENT_SUCCESS} status` });
+    // Check Status_purchase, if the purchase status is not packaged
+    if (getPayment.status_purchase !== `${process.env.PURCHASE_PACKAGED}`) return res.status(400).json({ message: `purchase does not have ${process.env.PURCHASE_PACKAGED} status` });
 
     const fields = {
         status_purchase: process.env.PURCHASE_DELIVERED
@@ -403,6 +206,7 @@ export const updatePurchaseToDelivered = async (req, res) => {
     const response = await handleUpdatePayment(fields, transaction_id);
 
     if (!response) return res.status(401).json({ message: "PurchaseToDelivered failed" });
+
+    handleSendMessage(`${getPayment.uuid_users}-socket-payment`, "get-payment")
     return res.status(200).json({ message: "PurchaseToDelivered success" })
 }
-

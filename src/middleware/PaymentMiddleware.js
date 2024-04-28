@@ -1,18 +1,17 @@
-import Carts from "../models/CartModel.js";
+import Products from "../models/ProductModel.js";
 
+export const checkAmoutProduct = async (req, res, next) => {
+    const { product } = req.body;
 
-export const deletingCartData = async (req, res, next) => {
-    try {
-        const { product } = req.body;
+    const products = await Products.findAll();
 
-        for (let index = 0; index < product.length; index++) {
-            await Carts.destroy({ where: { id: product[index].id } })
-        }
+    const productsWithLowStock = products.filter(data => {
+        const cartItem = product.find(item => item.idProduct === data.id);
+        return cartItem && data.amount < cartItem.amount;
+    });
 
-        req.body = req.body;
-        next()
-    } catch (error) {
-        console.error("Error deleting cart data:", error);
-        // next(error);
-    }
+    if (productsWithLowStock.length !== 0) return res.status(401).json({ message: "some products have insufficient stock for the requested quantity" });
+
+    req.body = req.body
+    next();
 }

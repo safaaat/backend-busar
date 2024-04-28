@@ -1,5 +1,6 @@
 import Carts from "../models/CartModel.js";
 import Products from "../models/ProductModel.js";
+import { sendCartDataToClient } from "../sockets/ConfigureSocket.js";
 
 export const getCarts = async (req, res) => {
     const cart = await Carts.findAll({
@@ -11,17 +12,23 @@ export const getCarts = async (req, res) => {
 }
 
 const newAddCart = async (data, uuidUsers) => {
-    const totalPrice = data.price * data.amount;
+    try {
+        const totalPrice = data.price * data.amount;
 
-    await Carts.create({
-        nameProduct: data.name,
-        idProduct: data.id,
-        uuidUser: uuidUsers,
-        urlImage: data.url,
-        price: data.price,
-        amount: data.amount,
-        totalPrice: totalPrice,
-    });
+        await Carts.create({
+            nameProduct: data.name,
+            idProduct: data.id,
+            uuidUser: uuidUsers,
+            urlImage: data.url,
+            price: data.price,
+            amount: data.amount,
+            totalPrice: totalPrice,
+        });
+
+        return "success"
+    } catch (error) {
+        return null
+    }
 }
 
 export const addCart = async (req, res) => {
@@ -34,17 +41,28 @@ export const addCart = async (req, res) => {
         }
     });
 
-    if (cart.length === 0) { // if the user dont have a cart, add the product to the cart
-        newAddCart(req.body, req.params.uuidUser)
-        return res.status(200).json({ message: "success add cart" })
-    }
+    // // if the user dont have a cart, add the product to the cart
+    // if (cart.length === 0) {
+    //     const addCart = await newAddCart(req.body, req.params.uuidUser);
+
+    //     if (!addCart) return res.status(401).json("failed add cart");
+
+    //     await sendCartDataToClient(req.params.uuidUser);
+
+    //     return res.status(200).json({ message: "success add cart" })
+    // }
 
     const productCart = cart.filter((data) => {
         return data.idProduct === req.body.id
     });
+    // if the cart doesn't have any product
+    if (productCart.length === 0 || cart.length === 0) {
+        const addCart = await newAddCart(req.body, req.params.uuidUser);
 
-    if (productCart.length === 0) { // if the cart doesn't have any product
-        newAddCart(req.body, req.params.uuidUser)
+        if (!addCart) return res.status(401).json("failed add cart");
+
+        await sendCartDataToClient(req.params.uuidUser);
+
         return res.status(200).json({ message: "success add cart" })
     }
 
@@ -60,6 +78,8 @@ export const addCart = async (req, res) => {
                 id: productCart[0].id
             }
         });
+
+        await sendCartDataToClient(req.params.uuidUser);
 
         return res.status(200).json({ message: "success add cart" })
     } catch (error) {

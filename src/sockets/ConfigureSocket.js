@@ -1,10 +1,12 @@
 // socketConfig.js
 import { Server } from "socket.io";
+import Carts from "../models/CartModel.js";
 
 export const io = new Server({
     cors: {
         origin: ["http://localhost:3000", "https://safaaat.github.io"],
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     },
 });
 
@@ -18,4 +20,18 @@ io.on("connection", (socket) => {
 
 export const handleBroadcastClient = (event, data) => {
     io.emit(event, data);
+}
+
+export const handleSendMessage = (event, message) => {
+    io.emit(event, message)
+}
+
+export const sendCartDataToClient = async (uuidUsers) => {
+    const cart = await Carts.findAll({
+        where: {
+            uuidUser: uuidUsers
+        }
+    })
+
+    io.emit(`${uuidUsers}-socket-cart`, cart);
 }

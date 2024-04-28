@@ -2,17 +2,15 @@ import express from "express";
 import dotenv from "dotenv";
 import db from "./src/config/Database.js";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import { UsersRouter, AuthRouter, CategoryRouter, AddressRouter, ProductRouter, WishlistRouter, CartRouter, LabelAddressRouter, PaymentRouter } from "./src/router/index.js";
-import { checkAndUpdateExpiredPayments, updatePurchaseStatusAccepted, updatePurchaseStatusDelivered } from "./src/controllers/Payment.js";
 import http from "http";
 import { io } from "./src/sockets/ConfigureSocket.js";
+import { checkAndUpdateExpiredPayments, updatePurchaseStatusAccepted, updatePurchaseStatusDelivered } from "./src/servis.js/PaymentServis.js";
 
 dotenv.config();
 
 const port = process.env.PORT || 5000
 const app = express();
-app.use(cors());
 
 const server = http.createServer(app);
 io.attach(server); // Attach Socket.IO to the HTTP server
@@ -25,9 +23,11 @@ try {
 }
 
 app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', "*");
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE, OPTIONS');
+    // res.setHeader('Access-Control-Allow-Origin', "*");
+    res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     next();
 })
 
@@ -53,11 +53,17 @@ server.listen(port, async () => {
     await updatePurchaseStatusAccepted();
 
     // Panggil fungsi ini secara berkala (misalnya, setiap 1 jam)
-    setInterval(checkAndUpdateExpiredPayments, 1 * 60 * 60 * 1000); // 1 jam dalam milidetik
+    // setInterval(checkAndUpdateExpiredPayments, 1 * 60 * 60 * 1000);
+
     // Panggil fungsi ini secara berkala (misalnya, setiap 15 menit)
-    setInterval(updatePurchaseStatusDelivered, 15 * 60 * 1000); // 15 menit dalam milidetik
+    // setInterval(updatePurchaseStatusDelivered, 15 * 60 * 1000); // 15 menit dalam milidetik
     // Panggil fungsi ini secara berkala (misalnya, setiap 15 menit)
-    setInterval(updatePurchaseStatusAccepted, 1 * 60 * 60 * 1000); // 15 menit dalam milidetik
+    // setInterval(updatePurchaseStatusAccepted, 1 * 60 * 60 * 1000); // 15 menit dalam milidetik
+
+
+    setInterval(updatePurchaseStatusDelivered, 1 * 60 * 1000);
+    setInterval(updatePurchaseStatusAccepted, 2 * 60 * 1000);
+    setInterval(checkAndUpdateExpiredPayments, 1 * 60 * 1000);
 
     console.log(`Server Running ${port}`);
 });
