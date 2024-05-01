@@ -1,5 +1,6 @@
 import Carts from "../models/CartModel.js";
 import Products from "../models/ProductModel.js";
+import { createCartDatabase } from "../servis.js/CartServis.js";
 import { sendCartDataToClient } from "../sockets/ConfigureSocket.js";
 
 export const getCarts = async (req, res) => {
@@ -11,60 +12,36 @@ export const getCarts = async (req, res) => {
     return res.status(200).json(cart);
 }
 
-const newAddCart = async (data, uuidUsers) => {
-    try {
-        const totalPrice = data.price * data.amount;
-
-        await Carts.create({
-            nameProduct: data.name,
-            idProduct: data.id,
-            uuidUser: uuidUsers,
-            urlImage: data.url,
-            price: data.price,
-            amount: data.amount,
-            totalPrice: totalPrice,
-        });
-
-        return "success"
-    } catch (error) {
-        return null
-    }
-}
-
 export const addCart = async (req, res) => {
-    const product = await Products.findAll({ where: { id: req.body.id } });
-    if (product.length === 0) return res.status(404).json({ message: "dont have a product" })
+    const { uuidUser } = req.params;
+    const { id, amount } = req.body;
+
+    const product = await Products.findOne({ where: { id: id } });
+    // If the product does not exist
+    if (!product) return res.status(404).json({ message: "dont have a product" });
+    // If the product amount is less than 0
+    if (product.amount <= 0) return res.status(404).json({ message: "the product is out of stock" });
 
     const cart = await Carts.findAll({
         where: {
-            uuidUser: req.params.uuidUser
+            uuidUser: uuidUser
         }
     });
-
-    // // if the user dont have a cart, add the product to the cart
-    // if (cart.length === 0) {
-    //     const addCart = await newAddCart(req.body, req.params.uuidUser);
-
-    //     if (!addCart) return res.status(401).json("failed add cart");
-
-    //     await sendCartDataToClient(req.params.uuidUser);
-
-    //     return res.status(200).json({ message: "success add cart" })
-    // }
-
     const productCart = cart.filter((data) => {
-        return data.idProduct === req.body.id
+        return data.idProduct === id
     });
+
     // if the cart doesn't have any product
     if (productCart.length === 0 || cart.length === 0) {
-        const addCart = await newAddCart(req.body, req.params.uuidUser);
+        const createCart = await createCartDatabase(req.body, uuidUser);
+        if (!createCart) return res.status(401).json({ message: "failed add cart" });
 
-        if (!addCart) return res.status(401).json("failed add cart");
-
-        await sendCartDataToClient(req.params.uuidUser);
-
+        await sendCartDataToClient(uuidUser);
         return res.status(200).json({ message: "success add cart" })
     }
+
+    // If the requested amount exceeds the available stock for the product
+    if (product.amount < productCart[0].amount + amount) return res.status(401).json({ message: `${product.name} only has ${product.amount} in stock` });
 
     try {
         const newAmount = productCart[0].amount + req.body.amount;
@@ -108,6 +85,7 @@ export const updateAmountCart = async (req, res) => {
             }
         });
 
+        await sendCartDataToClient(cart[0].uuidUser);
         return res.status(200).json({ message: "success update amount cart" })
     } catch (error) {
         return res.status(500).json({ message: error.message })
@@ -129,6 +107,8 @@ export const removeCarts = async (req, res) => {
                 id: req.body.arrayId
             }
         });
+
+        await sendCartDataToClient(cart[0].uuidUser);
         return res.status(200).json({ message: "delete cart success" })
     } catch (error) {
         res.status(500).json({ message: error.message })
