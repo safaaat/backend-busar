@@ -1,6 +1,7 @@
 // socketConfig.js
 import { Server } from "socket.io";
 import Carts from "../models/CartModel.js";
+import Wishlist from "../models/WishlistModel.js";
 
 export const io = new Server({
     cors: {
@@ -34,4 +35,14 @@ export const sendCartDataToClient = async (uuidUsers) => {
     })
 
     io.emit(`${uuidUsers}-socket-cart`, cart);
+}
+
+export const sendWishlistDataToClient = async (uuidUsers) => {
+    const wishlists = await Wishlist.findAll({
+        where: {
+            uuidUser: uuidUsers
+        }
+    });
+
+    io.emit(`${uuidUsers}-socket-wishlists`, wishlists);
 }
